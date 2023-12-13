@@ -1,5 +1,6 @@
 use git2::{Index, Oid, Repository};
 use std::path::Path;
+use std::process;
 use std::time::Duration;
 use tokio::time::interval;
 
@@ -7,6 +8,13 @@ use tokio::time::interval;
 async fn main() -> Result<(), anyhow::Error> {
     let watcher = Watcher::new(".")?;
     let mut interval = interval(Duration::from_secs(5));
+
+    // Sets up ctrl-c handler so we can add the last changes before exiting
+    ctrlc::set_handler(move || {
+        let watcher = Watcher::new(".").unwrap();
+        watcher.watch().unwrap();
+        process::exit(0);
+    })?;
 
     loop {
         interval.tick().await;
@@ -37,13 +45,14 @@ impl Watcher {
             _ => self.create_code_watch_head()?,
         };
 
-        let tree = self.create_tree()?;
-        self.commit_tree(tree, code_watch_head)?;
+        if let Some(tree) = self.create_tree()? {
+            self.commit_tree(tree, code_watch_head)?;
+        }
 
         Ok(())
     }
 
-    // Commits tree
+    // Commits tree and updates `CODE_WATCH_HEAD`
     fn commit_tree(&self, tree: Oid, parent: Oid) -> Result<Oid, anyhow::Error> {
         let tree = self.repo.find_tree(tree)?;
         let parent = self.repo.find_commit(parent)?;
@@ -62,18 +71,22 @@ impl Watcher {
     }
 
     // Creates tree from temporary index of current repo state
-    fn create_tree(&self) -> Result<Oid, anyhow::Error> {
+    fn create_tree(&self) -> Result<Option<Oid>, anyhow::Error> {
         let index_file = Path::new(".git/code-watch-index");
         let mut index = Index::open(index_file)?;
         self.repo.set_index(&mut index)?;
         index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+
+        if index.is_empty() {
+            return Ok(None);
+        }
 
         let oid = index.write_tree()?;
         // Clear up the index for next time
         index.clear()?;
         index.write()?;
 
-        Ok(oid)
+        Ok(Some(oid))
     }
 
     // Checks if CODE_WATCH_HEAD and HEAD have HEAD as a merge base. If not, then we need

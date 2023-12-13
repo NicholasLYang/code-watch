@@ -46,7 +46,11 @@ impl Watcher {
         };
 
         if let Some(tree) = self.create_tree()? {
-            self.commit_tree(tree, code_watch_head)?;
+            let code_watch_head_commit = self.repo.find_commit(code_watch_head)?;
+
+            if tree != code_watch_head_commit.tree_id() {
+                self.commit_tree(tree, code_watch_head)?;
+            }
         }
 
         Ok(())
@@ -57,7 +61,7 @@ impl Watcher {
         let tree = self.repo.find_tree(tree)?;
         let parent = self.repo.find_commit(parent)?;
         let signature = self.repo.signature()?;
-        let message = "Code watch commit";
+        let message = "Code Watch Commit";
         let commit = self.repo.commit(
             Some("CODE_WATCH_HEAD"),
             &signature,

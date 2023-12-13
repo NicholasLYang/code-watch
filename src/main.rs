@@ -63,7 +63,7 @@ impl Watcher {
         let signature = self.repo.signature()?;
         let message = "Code Watch Commit";
         let commit = self.repo.commit(
-            Some("CODE_WATCH_HEAD"),
+            Some(CODE_WATCH_HEAD),
             &signature,
             &signature,
             message,

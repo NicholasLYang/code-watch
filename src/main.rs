@@ -1,38 +1,104 @@
-use daemonize::Daemonize;
+use anyhow::anyhow;
+use clap::{Parser, Subcommand};
 use git2::{Index, Oid, Repository};
-use std::fs::File;
-use std::path::Path;
-use std::process;
+use std::env::current_exe;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fs, process};
+use sysinfo::{Pid, System, SystemExt};
 use tokio::time::interval;
+
+#[derive(Debug, Parser)]
+#[command(author, version, about)]
+struct Arguments {
+    #[command(subcommand)]
+    command: Command,
+    /// Set current working directory
+    #[arg(long)]
+    cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Start watching the current repository
+    Watch,
+    /// Manually run the daemon
+    Daemon,
+    /// Initialize eis in the current repository
+    Init,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let stdout = File::create("/tmp/daemon.out").unwrap();
-    let stderr = File::create("/tmp/daemon.err").unwrap();
+    let args = Arguments::parse();
+    let cwd = match args.cwd {
+        Some(cwd) => cwd,
+        None => std::env::current_dir()?,
+    };
 
-    let daemonize = Daemonize::new()
-        .pid_file("/tmp/test.pid") // Every method except `new` and `start`
-        .chown_pid_file(true) // is optional, see `Daemonize` documentation
-        .working_directory("/tmp") // for default behaviour.
-        .user("nobody")
-        .group("daemon") // Group name
-        .group(2) // or group id.
-        .umask(0o777) // Set umask, `0o027` by default.
-        .stdout(stdout) // Redirect stdout to `/tmp/daemon.out`.
-        .stderr(stderr); // Redirect stderr to `/tmp/daemon.err`.
+    match args.command {
+        Command::Watch => {
+            if !cwd.join(".eis").exists() {
+                return Err(anyhow!("eis is not initialized"));
+            }
 
-    daemonize.start()?;
+            let bin = current_exe()?;
 
-    let watcher = Watcher::new(".")?;
+            let pid_file = cwd.join(".eis").join("daemon.pid");
+            if let Ok(pid) = fs::read_to_string(&pid_file) {
+                let pid = pid.trim().parse::<Pid>()?;
+                let system = System::new();
+                if system.process(pid).is_some() {
+                    println!("eis daemon is already running");
+                    return Ok(());
+                }
+            }
+
+            let child = std::process::Command::new(bin)
+                .current_dir(cwd)
+                .arg("daemon")
+                .spawn()?;
+
+            fs::write(pid_file, child.id().to_string())?;
+
+            println!("Successfully started daemon");
+            Ok(())
+        }
+        Command::Init => {
+            if !cwd.join(".git").exists() {
+                return Err(anyhow!(
+                    "eis should be instantiated at the root of your git repository"
+                ));
+            }
+
+            fs::create_dir_all(cwd.join(".eis"))?;
+
+            let gitignore_path = cwd.join(".gitignore");
+            if let Some(gitignore) = fs::read_to_string(&gitignore_path).ok() {
+                if !gitignore.contains(".eis") {
+                    fs::write(gitignore_path, format!("{}\n.eis", gitignore))?;
+                }
+            } else {
+                fs::write(gitignore_path, ".eis")?;
+            }
+
+            println!("Successfully initialized eis");
+            Ok(())
+        }
+        Command::Daemon => daemon(cwd).await,
+    }
+}
+
+async fn daemon(cwd: PathBuf) -> Result<(), anyhow::Error> {
+    let watcher = Watcher::new(&cwd)?;
     let mut interval = interval(Duration::from_secs(5));
 
     // Sets up ctrl-c handler so we can add the last changes before exiting
-    /*ctrlc::set_handler(move || {
-        let watcher = Watcher::new(".").unwrap();
+    ctrlc::set_handler(move || {
+        let watcher = Watcher::new(&cwd).unwrap();
         watcher.watch().unwrap();
         process::exit(0);
-    })?;*/
+    })?;
 
     loop {
         interval.tick().await;

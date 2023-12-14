@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.75"
+anyhow = { version = "1.0.75", features = ["backtrace"] }
+clap = { version = "4.4.11", features = ["derive"] }
 ctrlc = "3.4.1"
-daemonize = "0.5.0"
 git2 = "0.18.1"
+sysinfo = "0.29.11"
 tokio = { version = "1.35.0", features = ["full"] }

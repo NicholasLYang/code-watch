@@ -5,7 +5,7 @@ use std::env::current_exe;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{fs, process};
-use sysinfo::{Pid, System, SystemExt};
+use sysinfo::{Pid, ProcessExt, System, SystemExt};
 use tokio::time::interval;
 
 #[derive(Debug, Parser)]
@@ -29,6 +29,10 @@ enum Command {
     /// Check whether the current directory is an eis repository
     /// and whether the daemon is currently running
     Status,
+    /// Restart the daemon that watches the repository
+    Restart,
+    /// Stop watching the repository
+    Stop,
 }
 
 fn is_daemon_running(pid_path: &Path) -> Result<bool, anyhow::Error> {
@@ -43,6 +47,57 @@ fn is_daemon_running(pid_path: &Path) -> Result<bool, anyhow::Error> {
     Ok(false)
 }
 
+fn stop_watcher_daemon(cwd: &Path) -> Result<(), anyhow::Error> {
+    if !cwd.join(".eis").exists() {
+        return Err(anyhow!("eis is not initialized"));
+    }
+
+    let pid_path = cwd.join(".eis").join("daemon.pid");
+
+    if !is_daemon_running(&pid_path)? {
+        println!("eis daemon is not running");
+        return Ok(());
+    }
+
+    let pid = fs::read_to_string(&pid_path)?;
+    let pid = pid.trim().parse::<Pid>()?;
+
+    let system = System::new_all();
+    if let Some(process) = system.process(pid) {
+        process.kill();
+    }
+
+    fs::remove_file(pid_path)?;
+
+    println!("Successfully stopped daemon");
+    Ok(())
+}
+
+fn spawn_watcher_daemon(cwd: &Path) -> Result<(), anyhow::Error> {
+    if !cwd.join(".eis").exists() {
+        return Err(anyhow!("eis is not initialized"));
+    }
+
+    let pid_path = cwd.join(".eis").join("daemon.pid");
+
+    if is_daemon_running(&pid_path)? {
+        println!("eis daemon is already running");
+        return Ok(());
+    }
+
+    let bin = current_exe()?;
+
+    let child = std::process::Command::new(bin)
+        .current_dir(&cwd)
+        .arg("daemon")
+        .spawn()?;
+
+    fs::write(pid_path, child.id().to_string())?;
+
+    println!("Successfully started daemon");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let args = Arguments::parse();
@@ -52,30 +107,7 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     match args.command {
-        Command::Watch => {
-            if !cwd.join(".eis").exists() {
-                return Err(anyhow!("eis is not initialized"));
-            }
-
-            let pid_path = cwd.join(".eis").join("daemon.pid");
-
-            if is_daemon_running(&pid_path)? {
-                println!("eis daemon is already running");
-                return Ok(());
-            }
-
-            let bin = current_exe()?;
-
-            let child = std::process::Command::new(bin)
-                .current_dir(&cwd)
-                .arg("daemon")
-                .spawn()?;
-
-            fs::write(pid_path, child.id().to_string())?;
-
-            println!("Successfully started daemon");
-            Ok(())
-        }
+        Command::Watch => spawn_watcher_daemon(&cwd),
         Command::Init => {
             if !cwd.join(".git").exists() {
                 return Err(anyhow!(
@@ -109,6 +141,16 @@ async fn main() -> Result<(), anyhow::Error> {
             } else {
                 println!("eis is not initialized");
             }
+
+            Ok(())
+        }
+        Command::Stop => {
+            stop_watcher_daemon(&cwd)?;
+            Ok(())
+        }
+        Command::Restart => {
+            stop_watcher_daemon(&cwd)?;
+            spawn_watcher_daemon(&cwd)?;
 
             Ok(())
         }

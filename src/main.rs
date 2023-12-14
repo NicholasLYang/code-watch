@@ -26,6 +26,21 @@ enum Command {
     Daemon,
     /// Initialize eis in the current repository
     Init,
+    /// Check whether the current directory is an eis repository
+    /// and whether the daemon is currently running
+    Status,
+}
+
+fn is_daemon_running(pid_path: &Path) -> Result<bool, anyhow::Error> {
+    if let Ok(pid) = fs::read_to_string(&pid_path) {
+        let pid = pid.trim().parse::<Pid>()?;
+        let system = System::new_all();
+        if system.process(pid).is_some() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 #[tokio::main]
@@ -42,24 +57,21 @@ async fn main() -> Result<(), anyhow::Error> {
                 return Err(anyhow!("eis is not initialized"));
             }
 
-            let bin = current_exe()?;
+            let pid_path = cwd.join(".eis").join("daemon.pid");
 
-            let pid_file = cwd.join(".eis").join("daemon.pid");
-            if let Ok(pid) = fs::read_to_string(&pid_file) {
-                let pid = pid.trim().parse::<Pid>()?;
-                let system = System::new();
-                if system.process(pid).is_some() {
-                    println!("eis daemon is already running");
-                    return Ok(());
-                }
+            if is_daemon_running(&pid_path)? {
+                println!("eis daemon is already running");
+                return Ok(());
             }
 
+            let bin = current_exe()?;
+
             let child = std::process::Command::new(bin)
-                .current_dir(cwd)
+                .current_dir(&cwd)
                 .arg("daemon")
                 .spawn()?;
 
-            fs::write(pid_file, child.id().to_string())?;
+            fs::write(pid_path, child.id().to_string())?;
 
             println!("Successfully started daemon");
             Ok(())
@@ -86,6 +98,20 @@ async fn main() -> Result<(), anyhow::Error> {
             Ok(())
         }
         Command::Daemon => daemon(cwd).await,
+        Command::Status => {
+            if cwd.join(".eis").exists() {
+                println!("eis is initialized");
+                if is_daemon_running(&cwd.join(".eis").join("daemon.pid"))? {
+                    println!("eis daemon is running");
+                } else {
+                    println!("eis daemon is not running");
+                }
+            } else {
+                println!("eis is not initialized");
+            }
+
+            Ok(())
+        }
     }
 }
 

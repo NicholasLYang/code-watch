@@ -132,7 +132,7 @@ async fn daemon(cwd: PathBuf) -> Result<(), anyhow::Error> {
     }
 }
 
-const CODE_WATCH_HEAD: &str = "CODE_WATCH_HEAD";
+const EIS_HEAD: &str = "EIS_HEAD";
 struct Watcher {
     repo: Repository,
 }
@@ -146,34 +146,30 @@ impl Watcher {
 
     fn watch(&self) -> Result<(), anyhow::Error> {
         // Check if up to date and if not, we create a new one
-        let code_watch_head = match self.get_code_watch_head() {
-            Some(code_watch_head)
-                if self.check_if_code_watch_head_is_up_to_date(code_watch_head)? =>
-            {
-                code_watch_head
-            }
-            _ => self.create_code_watch_head()?,
+        let eis_head = match self.get_eis_head() {
+            Some(eis_head) if self.check_if_eis_head_is_up_to_date(eis_head)? => eis_head,
+            _ => self.create_eis_head()?,
         };
 
         if let Some(tree) = self.create_tree()? {
-            let code_watch_head_commit = self.repo.find_commit(code_watch_head)?;
+            let eis_head_commit = self.repo.find_commit(eis_head)?;
 
-            if tree != code_watch_head_commit.tree_id() {
-                self.commit_tree(tree, code_watch_head)?;
+            if tree != eis_head_commit.tree_id() {
+                self.commit_tree(tree, eis_head)?;
             }
         }
 
         Ok(())
     }
 
-    // Commits tree and updates `CODE_WATCH_HEAD`
+    // Commits tree and updates `EIS_HEAD`
     fn commit_tree(&self, tree: Oid, parent: Oid) -> Result<Oid, anyhow::Error> {
         let tree = self.repo.find_tree(tree)?;
         let parent = self.repo.find_commit(parent)?;
         let signature = self.repo.signature()?;
-        let message = "Code Watch Commit";
+        let message = "eis commit";
         let commit = self.repo.commit(
-            Some(CODE_WATCH_HEAD),
+            Some(EIS_HEAD),
             &signature,
             &signature,
             message,
@@ -186,7 +182,7 @@ impl Watcher {
 
     // Creates tree from temporary index of current repo state
     fn create_tree(&self) -> Result<Option<Oid>, anyhow::Error> {
-        let index_file = Path::new(".git/code-watch-index");
+        let index_file = Path::new(".git/eis-index");
         let mut index = Index::open(index_file)?;
         self.repo.set_index(&mut index)?;
         index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
@@ -203,31 +199,26 @@ impl Watcher {
         Ok(Some(oid))
     }
 
-    // Checks if CODE_WATCH_HEAD and HEAD have HEAD as a merge base. If not, then we need
-    // to update CODE_WATCH_HEAD to be off of HEAD
-    fn check_if_code_watch_head_is_up_to_date(
-        &self,
-        code_watch_head: Oid,
-    ) -> Result<bool, anyhow::Error> {
+    // Checks if EIS_HEAD and HEAD have HEAD as a merge base. If not, then we need
+    // to update EIS_HEAD to be off of HEAD
+    fn check_if_eis_head_is_up_to_date(&self, eis_head: Oid) -> Result<bool, anyhow::Error> {
         let head = self.repo.head()?.target().unwrap();
 
-        let merge_base = self.repo.merge_base(code_watch_head, head)?;
+        let merge_base = self.repo.merge_base(eis_head, head)?;
 
         Ok(merge_base == head)
     }
 
-    // Creates the `CODE_WATCH_HEAD` ref off of HEAD
-    fn create_code_watch_head(&self) -> Result<Oid, anyhow::Error> {
+    // Creates the `EIS_HEAD` ref off of HEAD
+    fn create_eis_head(&self) -> Result<Oid, anyhow::Error> {
         let head_id = self.repo.head()?.target().unwrap();
-        let code_watch_head =
-            self.repo
-                .reference(CODE_WATCH_HEAD, head_id, true, "Code watch head")?;
+        let eis_head = self.repo.reference(EIS_HEAD, head_id, true, "eis head")?;
 
-        Ok(code_watch_head.target().unwrap())
+        Ok(eis_head.target().unwrap())
     }
 
-    fn get_code_watch_head(&self) -> Option<Oid> {
-        let head = self.repo.find_reference(&CODE_WATCH_HEAD).ok()?;
+    fn get_eis_head(&self) -> Option<Oid> {
+        let head = self.repo.find_reference(&EIS_HEAD).ok()?;
 
         head.target()
     }

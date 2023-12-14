@@ -1,4 +1,6 @@
+use daemonize::Daemonize;
 use git2::{Index, Oid, Repository};
+use std::fs::File;
 use std::path::Path;
 use std::process;
 use std::time::Duration;
@@ -6,15 +8,31 @@ use tokio::time::interval;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let stdout = File::create("/tmp/daemon.out").unwrap();
+    let stderr = File::create("/tmp/daemon.err").unwrap();
+
+    let daemonize = Daemonize::new()
+        .pid_file("/tmp/test.pid") // Every method except `new` and `start`
+        .chown_pid_file(true) // is optional, see `Daemonize` documentation
+        .working_directory("/tmp") // for default behaviour.
+        .user("nobody")
+        .group("daemon") // Group name
+        .group(2) // or group id.
+        .umask(0o777) // Set umask, `0o027` by default.
+        .stdout(stdout) // Redirect stdout to `/tmp/daemon.out`.
+        .stderr(stderr); // Redirect stderr to `/tmp/daemon.err`.
+
+    daemonize.start()?;
+
     let watcher = Watcher::new(".")?;
     let mut interval = interval(Duration::from_secs(5));
 
     // Sets up ctrl-c handler so we can add the last changes before exiting
-    ctrlc::set_handler(move || {
+    /*ctrlc::set_handler(move || {
         let watcher = Watcher::new(".").unwrap();
         watcher.watch().unwrap();
         process::exit(0);
-    })?;
+    })?;*/
 
     loop {
         interval.tick().await;

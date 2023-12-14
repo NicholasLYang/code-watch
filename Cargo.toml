@@ -1,5 +1,5 @@
 [package]
-name = "code-watch"
+name = "eis"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 ctrlc = "3.4.1"
+daemonize = "0.5.0"
 git2 = "0.18.1"
 tokio = { version = "1.35.0", features = ["full"] }

@@ -227,12 +227,21 @@ impl Watcher {
         let index_file = Path::new(".git/eis-index");
         let mut index = Index::open(index_file)?;
         self.repo.set_index(&mut index)?;
-        index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
-
+        let submodules = self.repo.submodules()?;
+        // Filter away submodules to avoid adding them to the index
+        // TODO: Add submodule support
+        let mut cb = |path: &_, _pathspec: &_| {
+            let is_submodule = submodules.iter().any(|submodule| submodule.path() == path);
+            if is_submodule {
+                1
+            } else {
+                0
+            }
+        };
+        index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, Some(&mut cb))?;
         if index.is_empty() {
             return Ok(None);
         }
-
         let oid = index.write_tree()?;
         // Clear up the index for next time
         index.clear()?;

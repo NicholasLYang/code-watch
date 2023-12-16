@@ -8,3 +8,6 @@ having to worry about committing them. It does so without disrupting your git in
 eis works by using a daemon to watch your code and create a secondary git index
 that it uses to create commits off of your most recent commit. These commits
 are stored under the `EIS_HEAD` ref, and are not pushed to your remote.
+
+When a new commit is created, or you move to a different branch, eis starts adding
+commits off of that latest commit.

@@ -265,11 +265,13 @@ impl Watcher {
         let head_id = self.repo.head()?.target().unwrap();
         let signature = self.repo.signature()?;
         let head_commit = self.repo.find_commit(head_id)?;
-        let mut parents = vec![&head_commit];
+
         let old_eis_commit = old_eis_head.map(|h| self.repo.find_commit(h)).transpose()?;
-        if let Some(old_eis_commit) = &old_eis_commit {
-            parents.push(old_eis_commit);
-        }
+        let parents = if let Some(old_eis_commit) = &old_eis_commit {
+            vec![old_eis_commit, &head_commit]
+        } else {
+            vec![&head_commit]
+        };
 
         self.repo.commit(
             Some(EIS_HEAD),

@@ -190,7 +190,7 @@ impl Watcher {
         // Check if up to date and if not, we create a new one
         let eis_head = match self.get_eis_head() {
             Some(eis_head) if self.check_if_eis_head_is_up_to_date(eis_head)? => eis_head,
-            _ => self.create_eis_head()?,
+            old_eis_head => self.create_eis_head(old_eis_head)?,
         };
 
         if let Some(tree) = self.create_tree()? {
@@ -261,8 +261,24 @@ impl Watcher {
     }
 
     // Creates the `EIS_HEAD` ref off of HEAD
-    fn create_eis_head(&self) -> Result<Oid, anyhow::Error> {
+    fn create_eis_head(&self, old_eis_head: Option<Oid>) -> Result<Oid, anyhow::Error> {
         let head_id = self.repo.head()?.target().unwrap();
+        let signature = self.repo.signature()?;
+        let head_commit = self.repo.find_commit(head_id)?;
+        let mut parents = vec![&head_commit];
+        let old_eis_commit = old_eis_head.map(|h| self.repo.find_commit(h)).transpose()?;
+        if let Some(old_eis_commit) = &old_eis_commit {
+            parents.push(old_eis_commit);
+        }
+
+        self.repo.commit(
+            Some(EIS_HEAD),
+            &signature,
+            &signature,
+            "eis commit",
+            &head_commit.tree()?,
+            &parents,
+        )?;
         let eis_head = self.repo.reference(EIS_HEAD, head_id, true, "eis head")?;
 
         Ok(eis_head.target().unwrap())

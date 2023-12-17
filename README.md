@@ -10,4 +10,5 @@ that it uses to create commits off of your most recent commit. These commits
 are stored under the `EIS_HEAD` ref, and are not pushed to your remote.
 
 When a new commit is created, or you move to a different branch, eis starts adding
-commits off of that latest commit.
+commits off of that latest commit. It also connects that commit to the previous chain 
+of changes, so you can navigate through your editing history.

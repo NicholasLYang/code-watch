@@ -1,3 +1,5 @@
+mod summary;
+
 use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use git2::{Index, Oid, Repository};
@@ -33,6 +35,7 @@ enum Command {
     Restart,
     /// Stop watching the repository
     Stop,
+    Summary,
 }
 
 fn is_daemon_running(pid_path: &Path) -> Result<bool, anyhow::Error> {
@@ -154,6 +157,12 @@ async fn main() -> Result<(), anyhow::Error> {
 
             Ok(())
         }
+        Command::Summary => {
+            let watcher = Watcher::new(&cwd)?;
+            watcher.summarize()?;
+
+            Ok(())
+        }
     }
 }
 
@@ -268,7 +277,7 @@ impl Watcher {
 
         let old_eis_commit = old_eis_head.map(|h| self.repo.find_commit(h)).transpose()?;
         let parents = if let Some(old_eis_commit) = &old_eis_commit {
-            vec![old_eis_commit, &head_commit]
+            vec![&head_commit, old_eis_commit]
         } else {
             vec![&head_commit]
         };
